@@ -57,6 +57,7 @@ class Transaction(BytomTransaction):
         self._transaction: Optional[dict] = None
         self._type: Optional[str] = None
         self._confirmations: int = config["confirmations"]
+        self._datas: dict = {}
         self._interest: int = 0
         self._amount: int = 0
         self._fee: int = 0
@@ -78,7 +79,7 @@ class Transaction(BytomTransaction):
         """
 
         if unit not in ["BTM", "mBTM", "NEU"]:
-            raise UnitError("Invalid Bytom unit, choose only BTM, mBTM or NEU units.")
+            raise UnitError("Invalid Bytom unit, choose only 'BTM', 'mBTM' or 'NEU' units.")
         return self._fee if unit == "NEU" else \
             amount_unit_converter(amount=self._fee, unit_from=f"NEU2{unit}")
 
@@ -238,6 +239,9 @@ class Transaction(BytomTransaction):
             raise ValueError("Transaction is none, build transaction first.")
         return self._signatures
 
+    def datas(self) -> dict:
+        return self._datas
+
 
 class NormalTransaction(Transaction):
     """
@@ -255,8 +259,9 @@ class NormalTransaction(Transaction):
     def __init__(self, network: str = config["network"]):
         super().__init__(network)
 
-    def build_transaction(self, address: str, recipients: dict, asset: Union[str, AssetNamespace] = config["asset"],
-                          fee: Optional[int] = None, **kwargs) -> "NormalTransaction":
+    def build_transaction(self, address: str, recipients: dict,
+                          asset: Union[str, AssetNamespace] = config["asset"], fee: Optional[Union[int, float]] = None,
+                          unit: str = config["unit"], **kwargs) -> "NormalTransaction":
         """
         Build Bytom normal transaction.
 
@@ -267,7 +272,9 @@ class NormalTransaction(Transaction):
         :param asset: Bytom asset id, defaults to BTM asset.
         :type asset: str, bytom.assets.AssetNamespace
         :param fee: Bytom custom fee, defaults to None.
-        :type fee: int
+        :type fee: int, float
+        :param unit: Bytom unit, default to NEU.
+        :type unit: str
 
         :returns: NormalTransaction -- Bytom normal transaction instance.
 
@@ -280,11 +287,18 @@ class NormalTransaction(Transaction):
         # Check parameter instances
         if not is_address(address, self._network):
             raise AddressError(f"Invalid Bytom sender '{address}' {self._network} address.")
+        if unit not in ["BTM", "mBTM", "NEU"]:
+            raise UnitError("Invalid Bytom unit, choose only 'BTM', 'mBTM' or 'NEU' units.")
 
         # Set address, fee and confirmations
         self._address, self._asset, self._confirmations, inputs, outputs, self._amount = (
             address, (str(asset.ID) if isinstance(asset, AssetNamespace) else asset),
-            config["confirmations"], [], [], sum(recipients.values())
+            config["confirmations"], [], [], (
+                sum(recipients.values()) if unit == "NEU" else
+                amount_unit_converter(
+                    amount=sum(recipients.values()), unit_from=f"{unit}2NEU"
+                )
+            )
         )
 
         if "options" in kwargs.keys():
@@ -307,7 +321,12 @@ class NormalTransaction(Transaction):
                 confirmations=self._confirmations, network=self._network
             )
         else:
-            self._fee = fee
+            self._fee = (
+                fee if unit == "NEU" else
+                amount_unit_converter(
+                    amount=fee, unit_from=f"{unit}2NEU"
+                )
+            )
 
         fi: int = (self._fee if not self._interest else (self._fee + self._interest))
         if maximum_amount < (self._amount + fi):
@@ -426,7 +445,8 @@ class NormalTransaction(Transaction):
                 ),
                 signatures=self.signatures(),
                 network=self._network,
-                type=self._type
+                type=self._type,
+                datas=self._datas
             ))).encode()).decode())
         return clean_transaction_raw(b64encode(str(json.dumps(dict(
             fee=self._fee,
@@ -438,7 +458,8 @@ class NormalTransaction(Transaction):
             ),
             signatures=[],
             network=self._network,
-            type=self._type
+            type=self._type,
+            datas=self._datas
         ))).encode()).decode())
 
 
@@ -460,9 +481,9 @@ class FundTransaction(Transaction):
 
         self._htlc_address: Optional[str] = None
 
-    def build_transaction(self, address: str, htlc_address: str, amount: Optional[int] = None,
+    def build_transaction(self, address: str, htlc_address: str, amount: Optional[Union[int, float]] = None,
                           max_amount: bool = False, asset: Union[str, AssetNamespace] = config["asset"],
-                          fee: Optional[int] = None, **kwargs) -> "FundTransaction":
+                          fee: Optional[Union[int, float]] = None, unit: str = config["unit"], **kwargs) -> "FundTransaction":
         """
         Build Bytom fund transaction.
 
@@ -471,13 +492,15 @@ class FundTransaction(Transaction):
         :param htlc_address: Bytom Hash Time Lock Contract (HTLC) address.
         :type htlc_address: str
         :param amount: Bytom amount to fund, default to None.
-        :type amount: int
+        :type amount: int, float
         :param max_amount: Bytom maximum amount to fund, default to False.
         :type max_amount: bool
         :param asset: Bytom asset id, defaults to BTM asset.
         :type asset: str, bytom.assets.AssetNamespace
         :param fee: Bytom custom fee, defaults to None.
-        :type fee: int
+        :type fee: int, float
+        :param unit: Bytom unit, default to NEU.
+        :type unit: str
 
         :returns: FundTransaction -- Bytom fund transaction instance.
 
@@ -492,6 +515,8 @@ class FundTransaction(Transaction):
             raise AddressError(f"Invalid Bytom sender '{address}' {self._network} address.")
         if not is_address(htlc_address, self._network) or get_address_type(htlc_address) != "p2wsh":
             raise AddressError(f"Invalid Bytom HTLC '{htlc_address}' {self._network} P2WSH address.")
+        if unit not in ["BTM", "mBTM", "NEU"]:
+            raise UnitError("Invalid Bytom unit, choose only 'BTM', 'mBTM' or 'NEU' units.")
 
         # Set address, fee and confirmations
         self._address, self._asset, self._htlc_address, self._confirmations = (
@@ -505,9 +530,14 @@ class FundTransaction(Transaction):
         if max_amount:
             self._amount = maximum_amount
         elif amount is None:
-            raise ValueError("Amount is None, Set NEU amount or maximum amount.")
+            raise ValueError("Amount is None, Set amount or maximum amount set true.")
         else:
-            self._amount = amount
+            self._amount = (
+                amount if unit == "NEU" else
+                amount_unit_converter(
+                    amount=amount, unit_from=f"{unit}2NEU"
+                )
+            )
         if maximum_amount < self._amount:
             raise BalanceError(
                 "Insufficient spend UTXO's", f"you don't have enough amount. "
@@ -524,7 +554,12 @@ class FundTransaction(Transaction):
                 temp_amount += int(449000 + 60000)
 
         if fee is not None:
-            self._fee = fee
+            self._fee = (
+                fee if unit == "NEU" else
+                amount_unit_converter(
+                    amount=fee, unit_from=f"{unit}2NEU"
+                )
+            )
         elif max_amount or maximum_amount < temp_amount:
             max_amount = True
             self._fee = estimate_transaction_fee(
@@ -572,6 +607,9 @@ class FundTransaction(Transaction):
                 f"You can fund minimum {449001} NEU amount."
             )
 
+        self._datas.setdefault("address", self._address)
+        self._datas.setdefault("htlc_address", self._htlc_address)
+        self._datas.setdefault("amount", (self._amount - fi))
         # Build transaction
         self._transaction = build_transaction(
             address=self._address,
@@ -672,7 +710,8 @@ class FundTransaction(Transaction):
                 ),
                 signatures=self.signatures(),
                 network=self._network,
-                type=self._type
+                type=self._type,
+                datas=self._datas
             ))).encode()).decode())
         return clean_transaction_raw(b64encode(str(json.dumps(dict(
             fee=self._fee,
@@ -684,7 +723,8 @@ class FundTransaction(Transaction):
             ),
             signatures=[],
             network=self._network,
-            type=self._type
+            type=self._type,
+            datas=self._datas
         ))).encode()).decode())
 
 
@@ -708,9 +748,9 @@ class ClaimTransaction(Transaction):
         self._transaction_detail: Optional[dict] = None
         self._htlc_utxo: Optional[dict] = None
 
-    def build_transaction(self, address: str, transaction_id: str, amount: Optional[int] = None,
+    def build_transaction(self, address: str, transaction_id: str, amount: Optional[Union[int, float]] = None,
                           max_amount: bool = config["max_amount"], asset: Union[str, AssetNamespace] = config["asset"],
-                          fee: Optional[int] = None, **kwargs) -> "ClaimTransaction":
+                          fee: Optional[Union[int, float]] = None, unit: str = config["unit"], **kwargs) -> "ClaimTransaction":
         """
         Build Bytom claim transaction.
 
@@ -719,13 +759,15 @@ class ClaimTransaction(Transaction):
         :param transaction_id: Bytom fund transaction id to redeem.
         :type transaction_id: str
         :param amount: Bytom amount to withdraw, default to None.
-        :type amount: int
+        :type amount: int, float
         :param max_amount: Bytom maximum amount to withdraw, default to True.
         :type max_amount: bool
         :param asset: Bytom asset id, defaults to BTM asset.
         :type asset: str, bytom.assets.AssetNamespace
         :param fee: Bytom custom fee, defaults to None.
-        :type fee: int
+        :type fee: int, float
+        :param unit: Bytom unit, default to NEU.
+        :type unit: str
 
         :returns: ClaimTransaction -- Bytom claim transaction instance.
 
@@ -738,6 +780,8 @@ class ClaimTransaction(Transaction):
         # Check parameter instances
         if not is_address(address, self._network):
             raise AddressError(f"Invalid Bytom recipient '{address}' {self._network} address.")
+        if unit not in ["BTM", "mBTM", "NEU"]:
+            raise UnitError("Invalid Bytom unit, choose only 'BTM', 'mBTM' or 'NEU' units.")
 
         # Set address, asset, confirmations and transaction_id
         self._address, self._asset, self._confirmations, self._transaction_id = (
@@ -756,9 +800,14 @@ class ClaimTransaction(Transaction):
         if max_amount:
             self._amount = self._htlc_utxo["amount"]
         elif amount is None:
-            raise ValueError("Amount is None, Set NEU amount or maximum amount.")
+            raise ValueError("Amount is None, Set amount or maximum amount set true.")
         else:
-            self._amount = amount
+            self._amount = (
+                amount if unit == "NEU" else
+                amount_unit_converter(
+                    amount=amount, unit_from=f"{unit}2NEU"
+                )
+            )
 
         if "options" in kwargs.keys():
             options: dict = kwargs.get("options")
@@ -773,7 +822,12 @@ class ClaimTransaction(Transaction):
                 confirmations=self._confirmations, network=self._network
             ) + 60000
         else:
-            self._fee = fee
+            self._fee = (
+                fee if unit == "NEU" else
+                amount_unit_converter(
+                    amount=fee, unit_from=f"{unit}2NEU"
+                )
+            )
 
         if self._amount < self._fee:
             raise BalanceError("Insufficient spend UTXO's",
@@ -782,10 +836,10 @@ class ClaimTransaction(Transaction):
             raise BalanceError("Insufficient spend UTXO's",
                                f"maximum you can withdraw {self._htlc_utxo['amount']} NEU amount.")
 
+        _amount = (self._amount - self._fee) if not self._interest else (self._amount - (self._fee + self._interest))
         outputs: list = [control_address(
-            asset=self._asset, amount=(
-                (self._amount - self._fee) if not self._interest else (self._amount - (self._fee + self._interest))
-            ), address=self._address, vapor=False
+            asset=self._asset, amount=_amount,
+            address=self._address, vapor=False
         )]
         if self._interest:
             outputs.append(control_address(
@@ -793,6 +847,9 @@ class ClaimTransaction(Transaction):
                 address=kwargs["options"]["address"], vapor=False
             ))
 
+        self._datas.setdefault("address", self._address)
+        self._datas.setdefault("htlc_address", self._htlc_utxo["address"])
+        self._datas.setdefault("amount", _amount)
         # Build transaction
         self._transaction = build_transaction(
             address=self._htlc_utxo["address"],
@@ -893,7 +950,8 @@ class ClaimTransaction(Transaction):
                 ),
                 signatures=self.signatures(),
                 network=self._network,
-                type=self._type
+                type=self._type,
+                datas=self._datas
             ))).encode()).decode())
         return clean_transaction_raw(b64encode(str(json.dumps(dict(
             fee=self._fee,
@@ -905,7 +963,8 @@ class ClaimTransaction(Transaction):
             ),
             signatures=[],
             network=self._network,
-            type=self._type
+            type=self._type,
+            datas=self._datas
         ))).encode()).decode())
 
 
@@ -929,9 +988,9 @@ class RefundTransaction(Transaction):
         self._transaction_detail: Optional[dict] = None
         self._htlc_utxo: Optional[dict] = None
 
-    def build_transaction(self, address: str, transaction_id: str, amount: Optional[int] = None,
+    def build_transaction(self, address: str, transaction_id: str, amount: Optional[Union[int, float]] = None,
                           max_amount: bool = config["max_amount"], asset: Union[str, AssetNamespace] = config["asset"],
-                          fee: Optional[int] = None, **kwargs) -> "RefundTransaction":
+                          fee: Optional[Union[int, float]] = None, unit: str = config["unit"], **kwargs) -> "RefundTransaction":
         """
         Build Bytom refund transaction.
 
@@ -940,13 +999,15 @@ class RefundTransaction(Transaction):
         :param transaction_id: Bytom fund transaction id to redeem.
         :type transaction_id: str
         :param amount: Bytom amount to withdraw, default to None.
-        :type amount: int
+        :type amount: int, float
         :param max_amount: Bytom maximum amount to withdraw, default to True.
         :type max_amount: bool
         :param asset: Bytom asset id, defaults to BTM asset.
         :type asset: str, bytom.assets.AssetNamespace
         :param fee: Bytom custom fee, defaults to None.
-        :type fee: int
+        :type fee: int, float
+        :param unit: Bytom unit, default to NEU.
+        :type unit: str
 
         :returns: RefundTransaction -- Bytom refund transaction instance.
 
@@ -959,6 +1020,8 @@ class RefundTransaction(Transaction):
         # Check parameter instances
         if not is_address(address, self._network):
             raise AddressError(f"Invalid Bytom sender '{address}' {self._network} address.")
+        if unit not in ["BTM", "mBTM", "NEU"]:
+            raise UnitError("Invalid Bytom unit, choose only 'BTM', 'mBTM' or 'NEU' units.")
 
         # Set address, fee, confirmations and transaction_id
         self._address, self._asset, self._confirmations, self._transaction_id = (
@@ -977,9 +1040,14 @@ class RefundTransaction(Transaction):
         if max_amount:
             self._amount = self._htlc_utxo["amount"]
         elif amount is None:
-            raise ValueError("Amount is None, Set NEU amount or maximum amount.")
+            raise ValueError("Amount is None, Set amount or maximum amount set true.")
         else:
-            self._amount = amount
+            self._amount = (
+                amount if unit == "NEU" else
+                amount_unit_converter(
+                    amount=amount, unit_from=f"{unit}2NEU"
+                )
+            )
 
         if "options" in kwargs.keys():
             options: dict = kwargs.get("options")
@@ -994,7 +1062,12 @@ class RefundTransaction(Transaction):
                 confirmations=self._confirmations, network=self._network
             ) + 60000
         else:
-            self._fee = fee
+            self._fee = (
+                fee if unit == "NEU" else
+                amount_unit_converter(
+                    amount=fee, unit_from=f"{unit}2NEU"
+                )
+            )
 
         if self._amount < self._fee:
             raise BalanceError("Insufficient spend UTXO's",
@@ -1003,10 +1076,10 @@ class RefundTransaction(Transaction):
             raise BalanceError("Insufficient spend UTXO's",
                                f"maximum you can refund {self._htlc_utxo['amount']} NEU amount.")
 
+        _amount = (self._amount - self._fee) if not self._interest else (self._amount - (self._fee + self._interest))
         outputs: list = [control_address(
-            asset=self._asset, amount=(
-                (self._amount - self._fee) if not self._interest else (self._amount - (self._fee + self._interest))
-            ), address=self._address, vapor=False
+            asset=self._asset, amount=_amount,
+            address=self._address, vapor=False
         )]
         if self._interest:
             outputs.append(control_address(
@@ -1014,6 +1087,9 @@ class RefundTransaction(Transaction):
                 address=kwargs["options"]["address"], vapor=False
             ))
 
+        self._datas.setdefault("address", self._address)
+        self._datas.setdefault("htlc_address", self._htlc_utxo["address"])
+        self._datas.setdefault("amount", _amount)
         # Build transaction
         self._transaction = build_transaction(
             address=self._htlc_utxo["address"],
@@ -1113,7 +1189,8 @@ class RefundTransaction(Transaction):
                 ),
                 signatures=self.signatures(),
                 network=self._network,
-                type=self._type
+                type=self._type,
+                datas=self._datas
             ))).encode()).decode())
         return clean_transaction_raw(b64encode(str(json.dumps(dict(
             fee=self._fee,
@@ -1125,5 +1202,6 @@ class RefundTransaction(Transaction):
             ),
             signatures=[],
             network=self._network,
-            type=self._type
+            type=self._type,
+            datas=self._datas
         ))).encode()).decode())
