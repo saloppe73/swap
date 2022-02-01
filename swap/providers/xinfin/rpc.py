@@ -5,17 +5,20 @@ from web3.types import Wei
 from web3.providers import (
     HTTPProvider, WebsocketProvider
 )
+from web3.contract import Contract
 from web3._utils.threads import Timeout
 from pyxdc.utils import decode_transaction_raw as dtr
 from hexbytes.main import HexBytes
 from eth_typing import URI
 from typing import (
-    Optional
+    Optional, Tuple
 )
 
 import web3 as _web3
 import requests
 import json
+import sys
+import os
 
 from ...exceptions import (
     AddressError, NetworkError, APIError
@@ -45,7 +48,7 @@ def get_web3(network: str = config["network"], provider: str = config["provider"
     # Check parameter instances
     if not is_network(network=network):
         raise NetworkError(f"Invalid XinFin '{network}' network",
-                           "choose only 'mainnet' or 'testnet' networks.")
+                           "choose only 'mainnet', 'apothem' or 'testnet' networks.")
 
     if provider == "http":
         web3: Web3 = Web3(HTTPProvider(
@@ -94,6 +97,98 @@ def get_balance(address: str, network: str = config["network"], provider: str = 
         to_checksum_address(address=address, prefix="0x")
     )
     return Wei(balance)
+
+
+def get_xrc20_balance(address: str, token_address: str, network: str = config["network"],
+                      provider: str = config["provider"]) -> Tuple[int, str, str, int, str]:
+    """
+    Get XinFin XRC20 token balance.
+
+    :param address: XinFin address.
+    :type address: str
+    :param token_address: XinFin XRC20 token address.
+    :type token_address: str
+    :param network: XinFin network, defaults to ``mainnet``.
+    :type network: str
+    :param provider: XinFin network provider, defaults to ``http``.
+    :type provider: str
+
+    :returns: tuple -- XinFin XRC20 token balance and decimals.
+
+    >>> from swap.providers.xinfin.rpc import get_xrc20_balance
+    >>> get_xrc20_balance(address="xdc70c1eb09363603a3b6391deb2daa6d2561a62f52", token_address="xdcDaB6844e863bdfEE6AaFf888D2D34Bf1B7c37861", network="testnet")
+    (99999999999999999999999999998, 18)
+    """
+
+    # Check parameter instances
+    if not is_address(address=address):
+        raise AddressError(f"Invalid XinFin '{address}' address.")
+    elif not is_address(address=token_address):
+        raise AddressError(f"Invalid XinFin XRC20 token '{token_address}' address.")
+
+    # Get current working directory path (like linux or unix path).
+    cwd: str = os.path.dirname(sys.modules[__package__].__file__)
+    with open(f"{cwd}/contracts/libs/xrc20.json", "r") as xrc20_json_file:
+        xrc20_contract_data: dict = json.loads(xrc20_json_file.read())["xrc20.sol:XRC20"]
+        xrc20_json_file.close()
+
+    web3: Web3 = get_web3(network=network, provider=provider)
+    xrc20_token: Contract = web3.eth.contract(
+        address=to_checksum_address(
+            address=token_address, prefix="0x"
+        ),
+        abi=xrc20_contract_data["abi"]
+    )
+    try:
+        name:   str = xrc20_token.functions.name().call()
+        symbol: str = xrc20_token.functions.symbol().call()
+        decimals: int = xrc20_token.functions.decimals().call()
+        balance: int = xrc20_token.functions.balanceOf(
+            to_checksum_address(address=to_checksum_address(address=address, prefix="0x"), prefix="0x")
+        ).call()
+        balance_str: str = str(balance)[:-decimals] + "." + str(balance)[-decimals:]
+        return balance, name, symbol, decimals, balance_str
+    except _web3.exceptions.BadFunctionCallOutput:
+        return 0, "", "", 0, ".0"
+
+
+def get_xrc20_decimals(token_address: str, network: str = config["network"], provider: str = config["provider"]) -> int:
+    """
+    Get XinFin XRC20 token decimals.
+
+    :param token_address: XinFin XRC20 token address.
+    :type token_address: str
+    :param network: XinFin network, defaults to ``mainnet``.
+    :type network: str
+    :param provider: XinFin network provider, defaults to ``http``.
+    :type provider: str
+
+    :returns: int -- XinFin XRC20 token decimals.
+
+    >>> from swap.providers.xinfin.rpc import get_xrc20_decimals
+    >>> get_xrc20_decimals(token_address="0xDaB6844e863bdfEE6AaFf888D2D34Bf1B7c37861", network="testnet")
+    18
+    """
+
+    # Check parameter instances
+    if not is_address(address=token_address):
+        raise AddressError(f"Invalid XinFin XRC20 token '{token_address}' address.")
+
+    # Get current working directory path (like linux or unix path).
+    cwd: str = os.path.dirname(sys.modules[__package__].__file__)
+    with open(f"{cwd}/contracts/libs/xrc20.json", "r") as xrc20_json_file:
+        xrc20_contract_data: dict = json.loads(xrc20_json_file.read())["xrc20.sol:XRC20"]
+        xrc20_json_file.close()
+
+    web3: Web3 = get_web3(network=network, provider=provider)
+    xrc20_token: Contract = web3.eth.contract(
+        address=to_checksum_address(
+            address=token_address, prefix="0x"
+        ),
+        abi=xrc20_contract_data["abi"]
+    )
+    decimals: int = xrc20_token.functions.decimals().call()
+    return decimals
 
 
 def get_transaction(transaction_hash: str, network: str = config["network"],
@@ -146,7 +241,7 @@ def get_transaction_receipt(transaction_hash: str, network: str = config["networ
     {'blockHash': '0x08d711ba038b97d0622d2c08b74dd2d9d2d00492116ead11452c12688618dcbc', 'blockNumber': '0x1e93914', 'contractAddress': None, 'cumulativeGasUsed': '0x5208', 'from': 'xdc95e80fc8ef98b92fe71514168c2e4b8f0ce38169', 'gasUsed': '0x5208', 'logs': [], 'logsBloom': '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', 'status': '0x1', 'to': 'xdc2224caa2235df8da3d2016d2ab1137d2d548a232', 'transactionHash': '0x5f4b11c11553cf040131b273c2bbc8c93d217269dd9b28393d5d0a3d623c1fcc', 'transactionIndex': '0x0'}
     """
 
-    if network == "mainnet":
+    if network in ["mainnet", "apothem"]:
         url = f"{config[network][provider]}/getTransactionReceipt"
         data = dict(
             jsonrpc="2.0", method="eth_getTransactionReceipt", params=[transaction_hash], id=1
@@ -205,29 +300,29 @@ def wait_for_transaction_receipt(transaction_hash: str, network: str = config["n
     return txn_receipt
 
 
-def decode_raw(transaction_raw: str) -> dict:
+def decode_raw(raw: str) -> dict:
     """
     Decode original XinFin raw into blockchain.
 
-    :param transaction_raw: XinFin transaction raw.
-    :type transaction_raw: str
+    :param raw: XinFin transaction raw.
+    :type raw: str
 
     :returns: dict -- XinFin decoded transaction hash.
 
     >>> from swap.providers.xinfin.rpc import decode_raw
-    >>> decode_raw(transaction_raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73")
+    >>> decode_raw(raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73")
     {'hash': '0x04b3bfb804f2b3329555c6f3a17a794b3f099b6435a9cf58c78609ed93853907', 'from': '0x3769F63e3b694cD2e973e28af59bdFd751303273', 'to': '0x3e0a9B2Ee8F8341A1aEaD3E7531d75f1e395F24b', 'nonce': 2, 'gas': 21000, 'gas_price': 250000000, 'value': 21000000000000000000, 'data': '0x', 'chain_id': -4, 'r': '0x3084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8', 's': '0x116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73', 'v': 27}
     """
 
-    return dtr(transaction_raw=transaction_raw)
+    return dtr(transaction_raw=raw)
 
 
-def submit_raw(transaction_raw: str, network: str = config["network"], provider: str = config["provider"]) -> str:
+def submit_raw(raw: str, network: str = config["network"], provider: str = config["provider"]) -> str:
     """
     Submit original XinFin raw into blockchain.
 
-    :param transaction_raw: XinFin transaction raw.
-    :type transaction_raw: str
+    :param raw: XinFin transaction raw.
+    :type raw: str
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
     :param provider: XinFin network provider, defaults to ``http``.
@@ -236,10 +331,10 @@ def submit_raw(transaction_raw: str, network: str = config["network"], provider:
     :returns: str -- XinFin submitted transaction hash/id.
 
     >>> from swap.providers.xinfin.rpc import submit_raw
-    >>> submit_raw(transaction_raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73", network="testnet")
+    >>> submit_raw(raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73", network="testnet")
     "0x04b3bfb804f2b3329555c6f3a17a794b3f099b6435a9cf58c78609ed93853907"
     """
 
     web3: Web3 = get_web3(network=network, provider=provider)
-    transaction_hash: HexBytes = web3.eth.send_raw_transaction(transaction_raw)
+    transaction_hash: HexBytes = web3.eth.send_raw_transaction(raw)
     return transaction_hash.hex()

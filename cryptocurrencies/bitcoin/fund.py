@@ -46,7 +46,6 @@ print("Public Key:", sender_wallet.public_key())
 print("Path:", sender_wallet.path())
 print("Address:", sender_wallet.address())
 print("Balance:", sender_wallet.balance(unit="BTC"), "BTC")
-print("UTXO's:", sender_wallet.utxos())
 
 print("=" * 10, "Hash Time Lock Contract (HTLC) between Sender and Recipient")
 
@@ -120,7 +119,7 @@ fund_signature.sign(
 print("Fund Signature Fee:", fund_signature.fee(unit="Satoshi"), "Satoshi")
 print("Fund Signature Hash:", fund_signature.hash())
 print("Fund Signature Main Raw:", fund_signature.raw())
-# print("Fund Signature Json:", json.dumps(fund_signature.json(), indent=4))
+print("Fund Signature Json:", json.dumps(fund_signature.json(), indent=4))
 print("Fund Signature Type:", fund_signature.type())
 
 signed_fund_signature_transaction_raw: str = fund_signature.transaction_raw()

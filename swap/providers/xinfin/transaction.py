@@ -12,6 +12,8 @@ from typing import (
 from base64 import b64encode
 
 import json
+import sys
+import os
 
 from ...exceptions import (
     AddressError, NetworkError, UnitError
@@ -27,7 +29,7 @@ from .utils import (
     _AttributeDict, is_network, is_address, to_checksum_address, amount_unit_converter
 )
 from .solver import (
-    FundSolver, WithdrawSolver, RefundSolver
+    NormalSolver, FundSolver, WithdrawSolver, RefundSolver
 )
 
 
@@ -37,23 +39,25 @@ class Transaction:
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Transaction XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
     :returns: Transaction -- XinFin transaction instance.
 
     .. note::
-        XinFin has only three networks, ``mainnet`` and ``testnet``.
+        XinFin has only three networks, ``mainnet``, ``apothem`` and ``testnet``.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"],
-                 token: Optional[str] = None):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
 
         # Check parameter instances
         if not is_network(network=network):
             raise NetworkError(f"Invalid XinFin '{network}' network",
-                               "choose only 'mainnet' or 'testnet' networks.")
+                               "choose only 'mainnet', 'apothem' or 'testnet' networks.")
 
+        self._xrc20: bool = xrc20
         self._network: str = network
         self.web3: Web3 = get_web3(
             network=network, provider=provider
@@ -228,8 +232,154 @@ class Transaction:
             type=self._type,
             transaction=self._transaction,
             signature=self._signature,
-            network=self._network
+            network=self._network,
+            xrc20=self._xrc20
         ))).encode()).decode())
+
+
+class NormalTransaction(Transaction):
+    """
+    XinFin Normal transaction.
+
+    :param network: XinFin network, defaults to ``mainnet``.
+    :type network: str
+    :param xrc20: Normal transaction XRC20 token, default to ``False``.
+    :type xrc20: bool
+    :param provider: XinFin network provider, defaults to ``http``.
+    :type provider: str
+
+    :returns: NormalTransaction -- XinFin normal transaction instance.
+
+    .. warning::
+        Do not forget to build transaction after initialize fund transaction.
+    """
+
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
+        super().__init__(
+            network=network, xrc20=xrc20, provider=provider
+        )
+
+    def build_transaction(self, address: str, recipient: dict, token_address: Optional[str] = None, unit: str = config["unit"]) -> "NormalTransaction":
+        """
+        Build XinFin normal transaction.
+
+        :param address: XinFin sender address.
+        :type address: str
+        :param recipient: Recipients XinFin address and amount.
+        :type recipient: dict
+        :param token_address: XinFin XRC20 token address, default to ``None``.
+        :type token_address: bool
+        :param unit: XinFin unit, default to ``Wei``.
+        :type unit: str
+
+        :returns: NormalTransaction -- XinFin normal transaction instance.
+
+        >>> from swap.providers.xinfin.transaction import NormalTransaction
+        >>> normal_transaction: NormalTransaction = NormalTransaction(network="testnet")
+        >>> normal_transaction.build_transaction(address="xdc2224caA2235DF8Da3D2016d2AB1137D2d548A232", recipient={"xdcf8D43806260CFc6cC79fB408BA1897054667F81C": 100_000_000})
+        <swap.providers.xinfin.transaction.FundTransaction object at 0x0409DAF0>
+        """
+
+        # Check parameter instances
+        if not is_address(address=address):
+            raise AddressError(f"Invalid XinFin sender '{address}' address.")
+        if unit not in ["XDC", "Gwei", "Wei"]:
+            raise UnitError("Invalid XinFin unit, choose only 'XDC', 'Gwei' or 'Wei' units.")
+        if len(recipient.items()) > 1:
+            raise ValueError("You can't broadcast for multiple addresses on this version, only for one address.")
+
+        # Set address, fee and confirmations
+        recipient_address, amount = list(recipient.items())[0]
+        self._address, self._token_address, self._amount = (
+            address, token_address, Wei(
+                amount if unit == "Wei" else amount_unit_converter(amount=amount, unit_from=f"{unit}2Wei")
+            ) if not self._xrc20 else amount
+        )
+
+        if self._xrc20:
+            # Get current working directory path (like linux or unix path).
+            cwd: str = os.path.dirname(sys.modules[__package__].__file__)
+            with open(f"{cwd}/contracts/libs/xrc20.json", "r") as xrc20_json_file:
+                xrc20_contract_data: dict = json.loads(xrc20_json_file.read())["xrc20.sol:XRC20"]
+                xrc20_json_file.close()
+
+            xrc20_contract: Contract = self.web3.eth.contract(
+                address=to_checksum_address(address=token_address, prefix="0x"), abi=xrc20_contract_data["abi"]
+            )
+            transfer_function = xrc20_contract.functions.transfer(
+                to_checksum_address(address=recipient_address, prefix="0x"), self._amount
+            )
+            self._fee = transfer_function.estimateGas({
+                "from": to_checksum_address(address=address, prefix="0x"),
+                "value": Wei(0),
+                "nonce": self.web3.eth.get_transaction_count(
+                    to_checksum_address(address=address, prefix="0x")
+                ),
+                "gasPrice": self.web3.eth.gas_price
+            })
+
+            self._transaction = transfer_function.buildTransaction({
+                "from": to_checksum_address(address=address, prefix="0x"),
+                "value": Wei(0),
+                "nonce": self.web3.eth.get_transaction_count(
+                    to_checksum_address(address=address, prefix="0x")
+                ),
+                "gas": self._fee,
+                "gasPrice": self.web3.eth.gas_price
+            })
+        else:
+            self._transaction = {
+                "from": to_checksum_address(address=address, prefix="0x"),
+                "to": to_checksum_address(address=recipient_address, prefix="0x"),
+                "value": self._amount,
+                "nonce": self.web3.eth.get_transaction_count(
+                    to_checksum_address(address=address, prefix="0x")
+                ),
+                "gasPrice": self.web3.eth.gas_price
+            }
+            self._fee = self.web3.eth.estimateGas(self._transaction)
+            self._transaction.setdefault("gas", self._fee)
+
+        self._type = "xinfin_xrc20_normal_unsigned" if self._xrc20 else "xinfin_normal_unsigned"
+        return self
+
+    def sign(self, solver: NormalSolver) -> "NormalTransaction":
+        """
+        Sign XinFin normal transaction.
+
+        :param solver: XinFin normal solver.
+        :type solver: xinfin.solver.NormalSolver
+
+        :returns: NormalTransaction -- XinFin normal transaction instance.
+
+        >>> from swap.providers.xinfin.transaction import NormalTransaction
+        >>> from swap.providers.xinfin.solver import NormalSolver
+        >>> normal_transaction: NormalTransaction = NormalTransaction(network="testnet")
+        >>> normal_transaction.build_transaction(address="xdc2224caA2235DF8Da3D2016d2AB1137D2d548A232", recipient={"xdcf8D43806260CFc6cC79fB408BA1897054667F81C": 100_000_000})
+        >>> normal_solver: NormalSolver = NormalSolver(xprivate_key="xprv9s21ZrQH143K3Y3pdbkbjreZQ9RVmqTLhRgf86uZyCJk2ou36YdUJt5frjwihGWmV1fQEDioiGZXWXUbHLy3kQf5xmhvhp8dZ2tfn6tgGUj", address=0)
+        >>> normal_transaction.sign(solver=normal_solver)
+        <swap.providers.xinfin.transaction.FundTransaction object at 0x0409DAF0>
+        """
+
+        # Check parameter instances
+        if not isinstance(solver, NormalSolver):
+            raise TypeError(f"Solver must be XinFin NormalSolver, not {type(solver).__name__} type.")
+
+        wallet: Wallet = solver.solve()
+        signed_normal_transaction: SignedTransaction = self.web3.eth.account.sign_transaction(
+            transaction_dict=self._transaction,
+            private_key=wallet.private_key()
+        )
+
+        self._signature = dict(
+            hash=signed_normal_transaction["hash"].hex(),
+            rawTransaction=signed_normal_transaction["rawTransaction"].hex(),
+            r=signed_normal_transaction["r"],
+            s=signed_normal_transaction["s"],
+            v=signed_normal_transaction["v"]
+        )
+        self._type = "xinfin_xrc20_normal_signed" if self._xrc20 else "xinfin_normal_signed"
+        return self
 
 
 class FundTransaction(Transaction):
@@ -238,6 +388,8 @@ class FundTransaction(Transaction):
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Fund transaction XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
@@ -247,9 +399,9 @@ class FundTransaction(Transaction):
         Do not forget to build transaction after initialize fund transaction.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"]):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
     def build_transaction(self, address: str, htlc: HTLC, amount: Union[Wei, int, float],
@@ -261,7 +413,7 @@ class FundTransaction(Transaction):
         :type htlc: xinfin.htlc.HTLC
         :param address: XinFin sender address.
         :type address: str
-        :param amount: XinFin amount.
+        :param amount: XinFin amount or XRC20 amount.
         :type amount: Wei, int, float
         :param unit: XinFin unit, default to ``Wei``.
         :type unit: str
@@ -291,22 +443,32 @@ class FundTransaction(Transaction):
 
         _amount: Wei = Wei(
             amount if unit == "Wei" else amount_unit_converter(amount=amount, unit_from=f"{unit}2Wei")
-        )
+        ) if not self._xrc20 else amount
 
         htlc_contract: Contract = self.web3.eth.contract(
-            address=self.web3.toChecksumAddress(htlc.contract_address(prefix="0x")), abi=htlc.abi()
+            address=htlc.contract_address(prefix="0x"), abi=htlc.abi()
         )
 
-        htlc_fund_function = htlc_contract.functions.fund(
-            unhexlify(htlc.agreements["secret_hash"]),  # Secret Hash
-            to_checksum_address(htlc.agreements["recipient_address"], prefix="0x"),  # Recipient Address
-            to_checksum_address(htlc.agreements["sender_address"], prefix="0x"),  # Sender Address
-            htlc.agreements["endtime"]["timestamp"]  # Locktime Seconds
-        )
+        if self._xrc20:
+            htlc_fund_function = htlc_contract.functions.fund(
+                to_checksum_address(htlc.agreements["token_address"], prefix="0x"),  # Token address
+                unhexlify(htlc.agreements["secret_hash"]),  # Secret Hash
+                to_checksum_address(htlc.agreements["recipient_address"], prefix="0x"),  # Recipient Address
+                to_checksum_address(htlc.agreements["sender_address"], prefix="0x"),  # Sender Address
+                htlc.agreements["endtime"]["timestamp"],  # Locktime Seconds
+                _amount  # Amount
+            )
+        else:
+            htlc_fund_function = htlc_contract.functions.fund(
+                unhexlify(htlc.agreements["secret_hash"]),  # Secret Hash
+                to_checksum_address(htlc.agreements["recipient_address"], prefix="0x"),  # Recipient Address
+                to_checksum_address(htlc.agreements["sender_address"], prefix="0x"),  # Sender Address
+                htlc.agreements["endtime"]["timestamp"]  # Locktime Seconds
+            )
 
         self._fee = htlc_fund_function.estimateGas({
             "from": to_checksum_address(address=address, prefix="0x"),
-            "value": _amount,
+            "value": _amount if not self._xrc20 else Wei(0),
             "nonce": self.web3.eth.get_transaction_count(
                 to_checksum_address(address=address, prefix="0x")
             ),
@@ -315,14 +477,14 @@ class FundTransaction(Transaction):
 
         self._transaction = htlc_fund_function.buildTransaction({
             "from": to_checksum_address(address=address, prefix="0x"),
-            "value": _amount,
+            "value": _amount if not self._xrc20 else Wei(0),
             "nonce": self.web3.eth.get_transaction_count(
                 to_checksum_address(address=address, prefix="0x")
             ),
             "gas": self._fee,
             "gasPrice": self.web3.eth.gas_price
         })
-        self._type = "xinfin_fund_unsigned"
+        self._type = "xinfin_xrc20_fund_unsigned" if self._xrc20 else "xinfin_fund_unsigned"
         return self
 
     def sign(self, solver: FundSolver) -> "FundTransaction":
@@ -364,7 +526,7 @@ class FundTransaction(Transaction):
             s=signed_fund_transaction["s"],
             v=signed_fund_transaction["v"]
         )
-        self._type = "xinfin_fund_signed"
+        self._type = "xinfin_xrc20_fund_signed" if self._xrc20 else "xinfin_fund_signed"
         return self
 
 
@@ -374,6 +536,8 @@ class WithdrawTransaction(Transaction):
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Withdraw transaction XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
@@ -383,9 +547,9 @@ class WithdrawTransaction(Transaction):
         Do not forget to build transaction after initialize withdraw transaction.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"]):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
     def build_transaction(self, transaction_hash: str, address: str, secret_key: str,
@@ -417,7 +581,7 @@ class WithdrawTransaction(Transaction):
             raise AddressError(f"Invalid XinFin HTLC contract '{contract_address}' address.")
 
         htlc: HTLC = HTLC(
-            contract_address=contract_address, network=self._network
+            contract_address=contract_address, network=self._network, xrc20=self._xrc20
         )
         htlc_contract: Contract = self.web3.eth.contract(
             address=self.web3.toChecksumAddress(htlc.contract_address(prefix="0x")), abi=htlc.abi()
@@ -427,7 +591,7 @@ class WithdrawTransaction(Transaction):
             transaction_hash=transaction_hash, network=self._network
         )).__attribute_dict__()
         log_fund: AttributeDict = htlc_contract.events.log_fund().processLog(
-            log=transaction_receipt["logs"][0]
+            log=transaction_receipt["logs"][2 if self._xrc20 else 0]
         )
 
         locked_contract_id: str = log_fund["args"]["locked_contract_id"]
@@ -454,7 +618,7 @@ class WithdrawTransaction(Transaction):
             "gas": self._fee,
             "gasPrice": self.web3.eth.gas_price
         })
-        self._type = "xinfin_withdraw_unsigned"
+        self._type = "xinfin_xrc20_withdraw_unsigned" if self._xrc20 else "xinfin_withdraw_unsigned"
         return self
 
     def sign(self, solver: WithdrawSolver) -> "WithdrawTransaction":
@@ -492,7 +656,7 @@ class WithdrawTransaction(Transaction):
             s=signed_withdraw_transaction["s"],
             v=signed_withdraw_transaction["v"]
         )
-        self._type = "xinfin_withdraw_signed"
+        self._type = "xinfin_xrc20_withdraw_signed" if self._xrc20 else "xinfin_withdraw_signed"
         return self
 
 
@@ -502,6 +666,8 @@ class RefundTransaction(Transaction):
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Refund transaction XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
@@ -511,9 +677,9 @@ class RefundTransaction(Transaction):
         Do not forget to build transaction after initialize refund transaction.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"]):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
     def build_transaction(self, transaction_hash: str, address: str,
@@ -543,7 +709,7 @@ class RefundTransaction(Transaction):
             raise AddressError(f"Invalid XinFin HTLC contract '{contract_address}' address.")
 
         htlc: HTLC = HTLC(
-            contract_address=contract_address, network=self._network
+            contract_address=contract_address, network=self._network, xrc20=self._xrc20
         )
         htlc_contract: Contract = self.web3.eth.contract(
             address=self.web3.toChecksumAddress(htlc.contract_address(prefix="0x")), abi=htlc.abi()
@@ -553,7 +719,7 @@ class RefundTransaction(Transaction):
             transaction_hash=transaction_hash, network=self._network
         )).__attribute_dict__()
         log_fund: AttributeDict = htlc_contract.events.log_fund().processLog(
-            log=transaction_receipt["logs"][0]
+            log=transaction_receipt["logs"][2 if self._xrc20 else 0]
         )
 
         locked_contract_id: str = log_fund["args"]["locked_contract_id"]
@@ -579,7 +745,7 @@ class RefundTransaction(Transaction):
             "gas": self._fee,
             "gasPrice": self.web3.eth.gas_price
         })
-        self._type = "xinfin_refund_unsigned"
+        self._type = "xinfin_xrc20_refund_unsigned" if self._xrc20 else "xinfin_refund_unsigned"
         return self
 
     def sign(self, solver: RefundSolver) -> "RefundTransaction":
@@ -617,5 +783,5 @@ class RefundTransaction(Transaction):
             s=signed_refund_transaction["s"],
             v=signed_refund_transaction["v"]
         )
-        self._type = "xinfin_refund_signed"
+        self._type = "xinfin_xrc20_refund_signed" if self._xrc20 else "xinfin_refund_signed"
         return self

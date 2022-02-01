@@ -10,12 +10,12 @@ from swap.providers.ethereum.utils import submit_transaction_raw
 
 import json
 
-# Choose network mainnet or testnet
+# Choose network mainnet, ropsten, kovan, rinkeby or testnet
 NETWORK: str = "ropsten"
 # Ethereum HTLC contract address
-CONTRACT_ADDRESS: str = "0xE5cb615899436A490dBde26d7880A0C2502Fc676"
-# Ethereum funded transaction hash/id
-TRANSACTION_HASH: str = "0xa42f5c441c9ba006c6abcbdbb6e1a3f21e491a9803df127958ee5acd8e17b74e"
+CONTRACT_ADDRESS: str = "0x0cc7C744f96729B7f60B12B36A4B9504191CD458"
+# Ethereum HTLC funded transaction hash/id
+TRANSACTION_HASH: str = "0xab72920d11012d7333e49dfe062b01e3d46c41002c0412adafd8e93eb8836577"
 # Ethereum recipient wallet mnemonic
 RECIPIENT_MNEMONIC: str = "hint excuse upgrade sleep easily deputy erase cluster section other ugly limit"
 # The preimage of HTLC contract

@@ -94,7 +94,7 @@ withdraw_signature.sign(
 print("Withdraw Signature Fee:", withdraw_signature.fee(unit="Satoshi"), "Satoshi")
 print("Withdraw Signature Hash:", withdraw_signature.hash())
 print("Withdraw Signature Main Raw:", withdraw_signature.raw())
-# print("Withdraw Signature Json:", json.dumps(withdraw_signature.json(), indent=4))
+print("Withdraw Signature Json:", json.dumps(withdraw_signature.json(), indent=4))
 print("Withdraw Signature Type:", withdraw_signature.type())
 
 signed_withdraw_signature_transaction_raw: str = withdraw_signature.transaction_raw()

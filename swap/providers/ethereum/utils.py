@@ -10,6 +10,8 @@ from typing import (
 )
 
 import json
+import sys
+import os
 
 from ...utils import clean_transaction_raw
 from ...exceptions import (
@@ -128,12 +130,22 @@ def is_transaction_raw(transaction_raw: str) -> bool:
         decoded_transaction_raw = b64decode(transaction_raw.encode())
         loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
         return loaded_transaction_raw["type"] in [
-            "ethereum_fund_unsigned", "ethereum_fund_signed",
-            "ethereum_withdraw_unsigned", "ethereum_withdraw_signed",
-            "ethereum_refund_unsigned", "ethereum_refund_signed"
+            "ethereum_normal_unsigned", "ethereum_normal_signed", "ethereum_erc20_normal_unsigned", "ethereum_erc20_normal_signed",
+            "ethereum_fund_unsigned", "ethereum_fund_signed", "ethereum_erc20_fund_unsigned", "ethereum_erc20_fund_signed",
+            "ethereum_withdraw_unsigned", "ethereum_withdraw_signed", "ethereum_erc20_withdraw_unsigned", "ethereum_erc20_withdraw_signed",
+            "ethereum_refund_unsigned", "ethereum_refund_signed", "ethereum_erc20_refund_unsigned", "ethereum_erc20_refund_signed"
         ]
     except:
         return False
+
+
+def get_erc20_data(key: str) -> dict:
+    # Get current working directory path (like linux or unix path).
+    cwd: str = os.path.dirname(sys.modules[__package__].__file__)
+    with open(f"{cwd}/contracts/libs/erc20.json", "r") as erc20_json_file:
+        erc20_data: dict = json.loads(erc20_json_file.read())["erc20.sol:ERC20"]
+        erc20_json_file.close()
+    return erc20_data[key]
 
 
 def decode_transaction_raw(transaction_raw: str) -> dict:
@@ -196,7 +208,10 @@ def submit_transaction_raw(transaction_raw: str, provider: str = config["provide
     loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
 
     if not loaded_transaction_raw["type"] in [
-        "ethereum_fund_signed", "ethereum_withdraw_signed", "ethereum_refund_signed"
+        "ethereum_normal_signed", "ethereum_erc20_normal_signed",
+        "ethereum_fund_signed", "ethereum_erc20_fund_signed",
+        "ethereum_withdraw_signed", "ethereum_erc20_withdraw_signed",
+        "ethereum_refund_signed", "ethereum_erc20_refund_signed"
     ]:
         raise TransactionRawError("Wrong Ethereum transaction raw must be signed, not unsigned transaction raw.")
 
@@ -217,24 +232,24 @@ def submit_transaction_raw(transaction_raw: str, provider: str = config["provide
     )
 
 
-def amount_unit_converter(amount: Union[int, float], unit: str = "Wei2Ether") -> Union[int, float]:
+def amount_unit_converter(amount: Union[int, float], unit_from: str = "Wei2Ether") -> Union[int, float]:
     """
-    XinFin amount unit converter.
+    Ethereum amount unit converter.
 
-    :param amount: XinFIn amount.
+    :param amount: Ethereum amount.
     :type amount: int, float
-    :param unit: XinFIn unit, default to Wei2Ether
-    :type unit: str
+    :param unit_from: Ethereum unit, default to Wei2Ether
+    :type unit_from: str
 
-    :returns: int, float -- XinFin amount.
+    :returns: int, float -- Ethereum amount.
 
     >>> from swap.providers.ethereum.utils import amount_unit_converter
-    >>> amount_unit_converter(amount=100_000_000, unit="Wei2Ether")
+    >>> amount_unit_converter(amount=100_000_000, unit_from="Wei2Ether")
     0.1
     """
 
-    if unit not in ["Ether2Gwei", "Ether2Wei", "Gwei2Ether", "Gwei2Wei", "Wei2Ether", "Wei2Gwei"]:
-        raise UnitError(f"Invalid Ethereum '{unit}' unit",
+    if unit_from not in ["Ether2Gwei", "Ether2Wei", "Gwei2Ether", "Gwei2Wei", "Wei2Ether", "Wei2Gwei"]:
+        raise UnitError(f"Invalid Ethereum '{unit_from}' unit from",
                         "choose only 'Ether2Gwei', 'Ether2Wei', 'Gwei2Ether', 'Gwei2Wei', 'Wei2Ether' or 'Wei2Gwei' units.")
 
     # Constant values
@@ -244,15 +259,15 @@ def amount_unit_converter(amount: Union[int, float], unit: str = "Wei2Ether") ->
         config["units"]["Wei"]
     )
 
-    if unit == "Ether2Gwei":
+    if unit_from == "Ether2Gwei":
         return float((amount * Gwei) / Ether)
-    elif unit == "Ether2Wei":
+    elif unit_from == "Ether2Wei":
         return int((amount * Wei) / Ether)
-    elif unit == "Gwei2Ether":
+    elif unit_from == "Gwei2Ether":
         return float((amount * Ether) / Gwei)
-    elif unit == "Gwei2Wei":
+    elif unit_from == "Gwei2Wei":
         return int((amount * Wei) / Gwei)
-    elif unit == "Wei2Ether":
+    elif unit_from == "Wei2Ether":
         return float((amount * Ether) / Wei)
-    elif unit == "Wei2Gwei":
+    elif unit_from == "Wei2Gwei":
         return int((amount * Gwei) / Wei)

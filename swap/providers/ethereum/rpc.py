@@ -5,14 +5,18 @@ from web3.types import Wei
 from web3.providers import (
     HTTPProvider, WebsocketProvider
 )
+from web3.contract import Contract
 from pyxdc.utils import decode_transaction_raw as dtr
 from hexbytes.main import HexBytes
 from eth_typing import URI
 from typing import (
-    Optional
+    Optional, Tuple
 )
 
 import web3 as _web3
+import json
+import sys
+import os
 
 from ...exceptions import (
     AddressError, NetworkError
@@ -93,8 +97,8 @@ def get_balance(address: str, network: str = config["network"], provider: str = 
     :returns: Wei -- Ethereum balance (Wei).
 
     >>> from swap.providers.ethereum.rpc import get_balance
-    >>> get_balance("0x70c1eb09363603a3b6391deb2daa6d2561a62f52", "ropsten")
-    25800000
+    >>> get_balance(address="0xbaF2Fc3829B6D25739BeDC18a5A83bF519c6Fe8c", network="testnet")
+    99937915760000000000
     """
 
     # Check parameter instances
@@ -106,6 +110,99 @@ def get_balance(address: str, network: str = config["network"], provider: str = 
         to_checksum_address(address=address)
     )
     return Wei(balance)
+
+
+def get_erc20_balance(address: str, token_address: str, network: str = config["network"],
+                      provider: str = config["provider"], token: Optional[str] = None) -> Tuple[int, str, str, int, str]:
+    """
+    Get Ethereum ERC20 token balance.
+
+    :param address: Ethereum address.
+    :type address: str
+    :param token_address: Ethereum ERC20 token address.
+    :type token_address: str
+    :param network: Ethereum network, defaults to ``mainnet``.
+    :type network: str
+    :param provider: Ethereum network provider, defaults to ``http``.
+    :type provider: str
+    :param token: Infura API endpoint token, defaults to ``4414fea5f7454211956b1627621450b4``.
+    :type token: str
+
+    :returns: tuple -- Ethereum ERC20 token balance and decimals.
+
+    >>> from swap.providers.ethereum.rpc import get_erc20_balance
+    >>> get_erc20_balance(address="0xbaF2Fc3829B6D25739BeDC18a5A83bF519c6Fe8c", token_address="0xDaB6844e863bdfEE6AaFf888D2D34Bf1B7c37861", network="testnet")
+    (99999999999999999999999999998, 18)
+    """
+
+    # Check parameter instances
+    if not is_address(address=address):
+        raise AddressError(f"Invalid Ethereum '{address}' address.")
+    elif not is_address(address=token_address):
+        raise AddressError(f"Invalid Ethereum ERC20 token '{token_address}' address.")
+
+    # Get current working directory path (like linux or unix path).
+    cwd: str = os.path.dirname(sys.modules[__package__].__file__)
+    with open(f"{cwd}/contracts/libs/erc20.json", "r") as erc20_json_file:
+        erc20_contract_data: dict = json.loads(erc20_json_file.read())["erc20.sol:ERC20"]
+        erc20_json_file.close()
+
+    web3: Web3 = get_web3(network=network, provider=provider, token=token)
+    erc20_token: Contract = web3.eth.contract(
+        address=to_checksum_address(address=token_address),
+        abi=erc20_contract_data["abi"]
+    )
+    try:
+        name: str = erc20_token.functions.name().call()
+        symbol: str = erc20_token.functions.symbol().call()
+        decimals: int = erc20_token.functions.decimals().call()
+        balance: int = erc20_token.functions.balanceOf(
+            to_checksum_address(address=to_checksum_address(address=address))
+        ).call()
+        balance_str: str = str(balance)[:-decimals] + "." + str(balance)[-decimals:]
+        return balance, name, symbol, decimals, balance_str
+    except _web3.exceptions.BadFunctionCallOutput:
+        return 0, "", "", 0, ".0"
+
+
+def get_erc20_decimals(token_address: str, network: str = config["network"],
+                       provider: str = config["provider"], token: Optional[str] = None) -> int:
+    """
+    Get Ethereum ERC20 token decimals.
+
+    :param token_address: Ethereum ERC20 token address.
+    :type token_address: str
+    :param network: Ethereum network, defaults to ``mainnet``.
+    :type network: str
+    :param provider: Ethereum network provider, defaults to ``http``.
+    :type provider: str
+    :param token: Infura API endpoint token, defaults to ``4414fea5f7454211956b1627621450b4``.
+    :type token: str
+
+    :returns: int -- Ethereum ERC20 token decimals.
+
+    >>> from swap.providers.ethereum.rpc import get_erc20_decimals
+    >>> get_erc20_decimals(token_address="0xDaB6844e863bdfEE6AaFf888D2D34Bf1B7c37861", network="testnet")
+    18
+    """
+
+    # Check parameter instances
+    if not is_address(address=token_address):
+        raise AddressError(f"Invalid Ethereum ERC20 token '{token_address}' address.")
+
+    # Get current working directory path (like linux or unix path).
+    cwd: str = os.path.dirname(sys.modules[__package__].__file__)
+    with open(f"{cwd}/contracts/libs/erc20.json", "r") as erc20_json_file:
+        erc20_contract_data: dict = json.loads(erc20_json_file.read())["erc20.sol:ERC20"]
+        erc20_json_file.close()
+
+    web3: Web3 = get_web3(network=network, provider=provider, token=token)
+    erc20_token: Contract = web3.eth.contract(
+        address=to_checksum_address(address=token_address),
+        abi=erc20_contract_data["abi"]
+    )
+    decimals: int = erc20_token.functions.decimals().call()
+    return decimals
 
 
 def get_transaction(transaction_hash: str, network: str = config["network"], provider: str = config["provider"],
@@ -203,30 +300,30 @@ def wait_for_transaction_receipt(transaction_hash: str, timeout: int = config["t
     return transaction_dict
 
 
-def decode_raw(transaction_raw: str) -> dict:
+def decode_raw(raw: str) -> dict:
     """
     Decode original Ethereum raw into blockchain.
 
-    :param transaction_raw: Ethereum transaction raw.
-    :type transaction_raw: str
+    :param raw: Ethereum transaction raw.
+    :type raw: str
 
     :returns: dict -- Ethereum decoded transaction hash.
 
     >>> from swap.providers.ethereum.rpc import decode_raw
-    >>> decode_raw(transaction_raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73")
+    >>> decode_raw(raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73")
     {'hash': '0x04b3bfb804f2b3329555c6f3a17a794b3f099b6435a9cf58c78609ed93853907', 'from': '0x3769F63e3b694cD2e973e28af59bdFd751303273', 'to': '0x3e0a9B2Ee8F8341A1aEaD3E7531d75f1e395F24b', 'nonce': 2, 'gas': 21000, 'gas_price': 250000000, 'value': 21000000000000000000, 'data': '0x', 'chain_id': -4, 'r': '0x3084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8', 's': '0x116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73', 'v': 27}
     """
 
-    return dtr(transaction_raw=transaction_raw)
+    return dtr(transaction_raw=raw)
 
 
-def submit_raw(transaction_raw: str, network: str = config["network"], provider: str = config["provider"],
+def submit_raw(raw: str, network: str = config["network"], provider: str = config["provider"],
                token: Optional[str] = None) -> str:
     """
     Submit original Ethereum raw into blockchain.
 
-    :param transaction_raw: Ethereum transaction raw.
-    :type transaction_raw: str
+    :param raw: Ethereum transaction raw.
+    :type raw: str
     :param network: Ethereum network, defaults to ``mainnet``.
     :type network: str
     :param provider: Ethereum network provider, defaults to ``http``.
@@ -237,10 +334,10 @@ def submit_raw(transaction_raw: str, network: str = config["network"], provider:
     :returns: str -- Ethereum submitted transaction hash/id.
 
     >>> from swap.providers.ethereum.rpc import submit_raw
-    >>> submit_raw(transaction_raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73", network="testnet")
+    >>> submit_raw(raw="0xf86c02840ee6b280825208943e0a9b2ee8f8341a1aead3e7531d75f1e395f24b8901236efcbcbb340000801ba03084982e4a9dd897d3cc1b2c8cc2d1b106b9d302eb23f6fae7d0e57e53e043f8a0116f13f9ab385f6b53e7821b3335ced924a1ceb88303347cd0af4aa75e6bfb73", network="testnet")
     "0x04b3bfb804f2b3329555c6f3a17a794b3f099b6435a9cf58c78609ed93853907"
     """
 
     web3: Web3 = get_web3(network=network, provider=provider, token=token)
-    transaction_hash: HexBytes = web3.eth.send_raw_transaction(transaction_raw)
+    transaction_hash: HexBytes = web3.eth.send_raw_transaction(raw)
     return transaction_hash.hex()

@@ -4,7 +4,7 @@ from hdwallet import HDWallet
 from hdwallet.cryptocurrencies import EthereumMainnet
 from web3.types import Wei
 from typing import (
-    Optional, Union
+    Optional, Union, Tuple
 )
 
 from ...utils import is_mnemonic
@@ -16,7 +16,7 @@ from .utils import (
     is_network, amount_unit_converter
 )
 from .rpc import (
-    get_balance
+    get_balance, get_erc20_balance
 )
 
 # Default derivation path
@@ -56,7 +56,7 @@ class Wallet(HDWallet):
 
     def from_entropy(self, entropy: str, language: str = "english", passphrase: Optional[str] = None) -> "Wallet":
         """
-        Initialize wallet from entropy.
+        Master from Entropy.
 
         :param entropy: Ethereum wallet entropy.
         :type entropy: str
@@ -79,7 +79,7 @@ class Wallet(HDWallet):
     def from_mnemonic(self, mnemonic: str, language: Optional[str] = None,
                       passphrase: Optional[str] = None) -> "Wallet":
         """
-        Initialize wallet from mnemonic.
+        Master from Mnemonic.
 
         :param mnemonic: Ethereum wallet mnemonic.
         :type mnemonic: str
@@ -105,7 +105,7 @@ class Wallet(HDWallet):
 
     def from_seed(self, seed: str) -> "Wallet":
         """
-        Initialize wallet from seed.
+        Master from Seed.
 
         :param seed: Ethereum wallet seed.
         :type seed: str
@@ -121,11 +121,11 @@ class Wallet(HDWallet):
         self._hdwallet.from_seed(seed=seed)
         return self
 
-    def from_root_xprivate_key(self, xprivate_key: str, strict: bool = True) -> "Wallet":
+    def from_xprivate_key(self, xprivate_key: str, strict: bool = True) -> "Wallet":
         """
-        Initialize wallet from root xprivate key.
+        Master from Root XPrivate Key.
 
-        :param xprivate_key: Ethereum wallet root xprivate key.
+        :param xprivate_key: Ethereum root xprivate key.
         :type xprivate_key: str
         :param strict: Strict for must be root xprivate key, default to ``True``.
         :type strict: bool
@@ -134,34 +134,36 @@ class Wallet(HDWallet):
 
         >>> from swap.providers.ethereum.wallet import Wallet
         >>> wallet: Wallet = Wallet(network="testnet")
-        >>> wallet.from_root_xprivate_key(xprivate_key="xprv9s21ZrQH143K3Y3pdbkbjreZQ9RVmqTLhRgf86uZyCJk2ou36YdUJt5frjwihGWmV1fQEDioiGZXWXUbHLy3kQf5xmhvhp8dZ2tfn6tgGUj")
+        >>> wallet.from_xprivate_key(xprivate_key="xprv9s21ZrQH143K3Y3pdbkbjreZQ9RVmqTLhRgf86uZyCJk2ou36YdUJt5frjwihGWmV1fQEDioiGZXWXUbHLy3kQf5xmhvhp8dZ2tfn6tgGUj")
         <swap.providers.ethereum.wallet.Wallet object at 0x040DA268>
         """
 
-        self._hdwallet.from_root_xprivate_key(xprivate_key=xprivate_key, strict=strict)
+        self._hdwallet.from_xprivate_key(xprivate_key=xprivate_key, strict=strict)
         return self
 
-    def from_xprivate_key(self, xprivate_key: str) -> "Wallet":
+    def from_xpublic_key(self, xpublic_key: str, strict: bool = True) -> "Wallet":
         """
-        Initialize wallet from xprivate key.
+        Master from Root XPublic Key.
 
-        :param xprivate_key: Ethereum wallet xprivate key.
-        :type xprivate_key: str
+        :param xpublic_key: Ethereum root xpublic key.
+        :type xpublic_key: str
+        :param strict: Strict for must be root xprivate key, default to ``True``.
+        :type strict: bool
 
         :returns: Wallet -- Ethereum wallet instance.
 
         >>> from swap.providers.ethereum.wallet import Wallet
         >>> wallet: Wallet = Wallet(network="testnet")
-        >>> wallet.from_xprivate_key(xprivate_key="xprvA3xrxQQVw6Kvc786WAccK4H7dLHhnb9XRsMUMqU3bJoZf5bWxtd5VePTNnn854tEbvV57ggjqkGHXc2u4Jx2veJzXRS1mBuokqz1aXL6tDW")
+        >>> wallet.from_xpublic_key(xpublic_key="xpub661MyMwAqRbcG28HjdHc6zbHxBFzBJBC4ecFvVKBXXqiucEBe5wirgQ9hzY2WQMjnurVjJbTjMWRskHi7jnSRkJdj4oRu4Vdh7Ln1F83mLJ")
         <swap.providers.ethereum.wallet.Wallet object at 0x040DA268>
         """
 
-        self._hdwallet.from_xprivate_key(xprivate_key=xprivate_key)
+        self._hdwallet.from_xpublic_key(xpublic_key=xpublic_key, strict=strict)
         return self
 
     def from_wif(self, wif: str) -> "Wallet":
         """
-        Initialize wallet from wallet important format (WIF).
+        Master from Wallet Important Format (WIF).
 
         :param wif: Ethereum wallet important format.
         :type wif: str
@@ -179,9 +181,9 @@ class Wallet(HDWallet):
 
     def from_private_key(self, private_key) -> "Wallet":
         """
-        Initialize wallet from private key.
+        Master from Private Key.
 
-        :param private_key: Ethereum wallet private key.
+        :param private_key: Ethereum private key.
         :type private_key: str
 
         :returns: Wallet -- Ethereum wallet instance.
@@ -591,4 +593,23 @@ class Wallet(HDWallet):
             address=self.address(), network=self._network, provider=self._provider, token=self._token
         )
         return balance if unit == "Wei" else \
-            amount_unit_converter(amount=balance, unit=f"Wei2{unit}")
+            amount_unit_converter(amount=balance, unit_from=f"Wei2{unit}")
+
+    def erc20_balance(self, token_address: str) -> Tuple[int, str, str, int, str]:
+        """
+        Get Ethereum wallet ERC20 balance.
+
+        :param token_address: Ethereum ERC20 token address.
+        :type token_address: str
+
+        :return: tuple -- Ethereum wallet ERC20 balance.
+
+        >>> from swap.providers.ethereum.wallet import Wallet
+        >>> wallet: Wallet = Wallet(network="testnet")
+        >>> wallet.from_entropy(entropy="ed0802d701a033776811601dd6c5c4a9")
+        >>> wallet.from_path(path="m/44'/60'/0'/0/0")
+        >>> wallet.erc20_balance(token_address="0xDaB6844e863bdfEE6AaFf888D2D34Bf1B7c37861")
+        (99999999999999999999999999998, 18)
+        """
+
+        return get_erc20_balance(address=self.address(), token_address=token_address, network=self._network)

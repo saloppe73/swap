@@ -19,9 +19,11 @@ def test_bitcoin_cli_submit(cli_tester):
         cli_main, [
             "bitcoin",
             "submit",
-            "--transaction-raw", _["bitcoin"]["refund"]["unsigned"]["transaction_raw"]
+            "--transaction-raw", _["bitcoin"]["refund"]["unsigned"]["transaction_raw"],
+            "--endpoint", "smartbit"
         ]
     )
     assert submit.exit_code == 0
     assert submit.output == "Error: (REQ_ERROR), 16: mandatory-script-verify-flag-failed " \
-                            "(Operation not valid with the current stack size)" + "\n"
+                            "(Operation not valid with the current stack size)" + "\n" or \
+           str(submit.output).startswith("Error: HTTPSConnectionPool")

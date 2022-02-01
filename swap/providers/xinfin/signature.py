@@ -16,7 +16,7 @@ from ...exceptions import (
 from ..config import xinfin as config
 from .transaction import Transaction
 from .solver import (
-    FundSolver, WithdrawSolver, RefundSolver
+    NormalSolver, FundSolver, WithdrawSolver, RefundSolver
 )
 from .wallet import Wallet
 from .utils import (
@@ -30,18 +30,20 @@ class Signature(Transaction):
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Signature XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
     :returns: Signature -- XinFin signature instance.
 
     .. note::
-        XinFin has only two networks, ``mainnet`` and ``testnet``.
+        XinFin has only two networks, ``mainnet``, ``apothem`` and ``testnet``.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"]):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
         self._signed_raw: Optional[str] = None
@@ -157,17 +159,17 @@ class Signature(Transaction):
 
         return self._type
 
-    def sign(self, transaction_raw: str, solver: Union[FundSolver, WithdrawSolver, RefundSolver]) -> \
-            Union["FundSignature", "WithdrawSignature", "RefundSignature"]:
+    def sign(self, transaction_raw: str, solver: Union[NormalSolver, FundSolver, WithdrawSolver, RefundSolver]) -> \
+            Union["NormalSignature", "FundSignature", "WithdrawSignature", "RefundSignature"]:
         """
         Sign XinFin unsigned transaction raw.
 
         :param transaction_raw: XinFin unsigned transaction raw.
         :type transaction_raw: str
         :param solver: XinFin solver.
-        :type solver: xinfin.solver.FundSolver, xinfin.solver.WithdrawSolver, xinfin.solver.RefundSolver
+        :type solver: xinfin.solver.NormalSolver, xinfin.solver.FundSolver, xinfin.solver.WithdrawSolver, xinfin.solver.RefundSolver
 
-        :returns: FundSignature, WithdrawSignature, RefundSignature -- XinFin signature instance.
+        :returns: NormalSignature, FundSignature, WithdrawSignature, RefundSignature -- XinFin signature instance.
 
         >>> from swap.providers.xinfin.signature import Signature
         >>> from swap.providers.xinfin.solver import FundSolver
@@ -185,16 +187,36 @@ class Signature(Transaction):
         loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
 
         self._type = loaded_transaction_raw["type"]
-        if loaded_transaction_raw["type"] == "xinfin_fund_unsigned":
-            return FundSignature(network=self._network).sign(
+        if loaded_transaction_raw["type"] == "xinfin_normal_unsigned":
+            return NormalSignature(network=self._network, xrc20=False).sign(
+                transaction_raw=transaction_raw, solver=solver
+            )
+        elif loaded_transaction_raw["type"] == "xinfin_xrc20_normal_unsigned":
+            return NormalSignature(network=self._network, xrc20=True).sign(
+                transaction_raw=transaction_raw, solver=solver
+            )
+        elif loaded_transaction_raw["type"] == "xinfin_fund_unsigned":
+            return FundSignature(network=self._network, xrc20=False).sign(
+                transaction_raw=transaction_raw, solver=solver
+            )
+        elif loaded_transaction_raw["type"] == "xinfin_xrc20_fund_unsigned":
+            return FundSignature(network=self._network, xrc20=True).sign(
                 transaction_raw=transaction_raw, solver=solver
             )
         elif loaded_transaction_raw["type"] == "xinfin_withdraw_unsigned":
-            return WithdrawSignature(network=self._network).sign(
+            return WithdrawSignature(network=self._network, xrc20=False).sign(
+                transaction_raw=transaction_raw, solver=solver
+            )
+        elif loaded_transaction_raw["type"] == "xinfin_xrc20_withdraw_unsigned":
+            return WithdrawSignature(network=self._network, xrc20=True).sign(
                 transaction_raw=transaction_raw, solver=solver
             )
         elif loaded_transaction_raw["type"] == "xinfin_refund_unsigned":
-            return RefundSignature(network=self._network).sign(
+            return RefundSignature(network=self._network, xrc20=False).sign(
+                transaction_raw=transaction_raw, solver=solver
+            )
+        elif loaded_transaction_raw["type"] == "xinfin_xrc20_refund_unsigned":
+            return RefundSignature(network=self._network, xrc20=True).sign(
                 transaction_raw=transaction_raw, solver=solver
             )
 
@@ -239,25 +261,115 @@ class Signature(Transaction):
         return clean_transaction_raw(self._signed_raw)
 
 
+class NormalSignature(Signature):
+    """
+    XinFin Normal signature.
+
+    :param network: XinFin network, defaults to ``mainnet``.
+    :type network: str
+    :param xrc20: Normal signature XRC20 token, default to ``False``.
+    :type xrc20: bool
+    :param provider: XinFin network provider, defaults to ``http``.
+    :type provider: str
+
+    :returns: NormalSignature -- XinFin normal signature instance.
+
+    .. note::
+        XinFin has only five networks, ``mainnet``, ``ropsten``, ``kovan``, ``rinkeby`` and ``testnet``.
+    """
+
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
+        super().__init__(
+            network=network, xrc20=xrc20, provider=provider
+        )
+
+    def sign(self, transaction_raw: str, solver: NormalSolver) -> "NormalSignature":
+        """
+        Sign XinFin unsigned normal transaction raw.
+
+        :param transaction_raw: XinFin unsigned normal transaction raw.
+        :type transaction_raw: str
+        :param solver: XinFin solver.
+        :type solver: xinfin.solver.NormalSolver
+
+        :returns: NormalSignature -- XinFin normal signature instance.
+
+        >>> from swap.providers.xinfin.signature import NormalSignature
+        >>> from swap.providers.xinfin.solver import NormalSolver
+        >>> normal_signature: NormalSignature = NormalSignature(network="mainnet")
+        >>> normal_solver: NormalSolver = NormalSolver(xprivate_key="xprv9s21ZrQH143K3Y3pdbkbjreZQ9RVmqTLhRgf86uZyCJk2ou36YdUJt5frjwihGWmV1fQEDioiGZXWXUbHLy3kQf5xmhvhp8dZ2tfn6tgGUj")
+        >>> normal_signature.sign(transaction_raw="eyJmZWUiOiAxMzg0NDgsICJ0cmFuc2FjdGlvbiI6IHsiY2hhaW5JZCI6IDEzMzcsICJmcm9tIjogIjB4NjllMDRmZTE2YzlBNkE4MzA3NkIzYzJkYzRiNEJjMjFiNWQ5QTIwQyIsICJ2YWx1ZSI6IDMwMDAwMDAwMDAwMDAwMDAwMDAsICJub25jZSI6IDEsICJnYXMiOiAxMzg0NDgsICJnYXNQcmljZSI6IDIwMDAwMDAwMDAwLCAidG8iOiAiMHhlYUVhQzgxZGE1RTM4NkU4Q2E0RGUxZTY0ZDQwYTEwRTQ2OEE1YjQwIiwgImRhdGEiOiAiMHhmNGZkMzA2MjNhMjZkYTgyZWFkMTVhODA1MzNhMDI2OTY2NTZiMTRiNWRiZmQ4NGViMTQ3OTBmMmUxYmU1ZTllNDU4MjBlZWIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBkNzdlMGQyZWVmOTA1Y2ZiMzljM2M0Yjk1MmVkMjc4ZDU4Zjk2ZTFmMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwNjllMDRmZTE2YzlhNmE4MzA3NmIzYzJkYzRiNGJjMjFiNWQ5YTIwYzAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwNjBjZTRiNzIifSwgInNpZ25hdHVyZSI6IG51bGwsICJuZXR3b3JrIjogInRlc3RuZXQiLCAidHlwZSI6ICJldGhlcmV1bV9mdW5kX3Vuc2lnbmVkIn0", solver=normal_solver)
+        <swap.providers.xinfin.signature.NormalSignature object at 0x0409DAF0>
+        """
+
+        # Check parameter instances
+        if not is_transaction_raw(transaction_raw=transaction_raw):
+            raise TransactionRawError("Invalid XinFin unsigned transaction raw.")
+
+        transaction_raw = clean_transaction_raw(transaction_raw)
+        decoded_transaction_raw = b64decode(transaction_raw.encode())
+        loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
+
+        if loaded_transaction_raw["type"] not in ["xinfin_normal_unsigned", "xinfin_xrc20_normal_unsigned"]:
+            raise TypeError(f"Invalid XinFin normal unsigned transaction raw type, "
+                            f"you can't sign '{loaded_transaction_raw['type']}' type by using normal signature.")
+
+        # Check parameter instances
+        if not isinstance(solver, NormalSolver):
+            raise TypeError(f"Solver must be XinFin NormalSolver, not '{type(solver).__name__}' type.")
+
+        # Set transaction, fee, type and network
+        self._fee, self._type, self._network, self._transaction = (
+            loaded_transaction_raw["fee"], loaded_transaction_raw["type"],
+            loaded_transaction_raw["network"], loaded_transaction_raw["transaction"]
+        )
+
+        wallet: Wallet = solver.solve()
+        signed_normal_transaction: SignedTransaction = self.web3.eth.account.sign_transaction(
+            transaction_dict=self._transaction,
+            private_key=wallet.private_key()
+        )
+
+        self._signature = dict(
+            hash=signed_normal_transaction["hash"].hex(),
+            rawTransaction=signed_normal_transaction["rawTransaction"].hex(),
+            r=signed_normal_transaction["r"],
+            s=signed_normal_transaction["s"],
+            v=signed_normal_transaction["v"]
+        )
+        self._type = "xinfin_xrc20_normal_signed" if self._xrc20 else "xinfin_normal_signed"
+
+        self._signed_raw = b64encode(str(json.dumps(dict(
+            fee=self._fee,
+            type=self._type,
+            transaction=self._transaction,
+            signature=self._signature,
+            network=self._network,
+            xrc20=self._xrc20
+        ))).encode()).decode()
+        return self
+
+
 class FundSignature(Signature):
     """
     XinFin Fund signature.
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Fund signature XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
     :returns: FundSignature -- XinFin fund signature instance.
 
     .. note::
-        XinFin has only two networks, ``mainnet`` and ``testnet``.
+        XinFin has only two networks, ``mainnet``, ``apothem`` and ``testnet``.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"],
-                 token: Optional[str] = None):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
     def sign(self, transaction_raw: str, solver: FundSolver) -> "FundSignature":
@@ -287,7 +399,7 @@ class FundSignature(Signature):
         decoded_transaction_raw = b64decode(transaction_raw.encode())
         loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
 
-        if not loaded_transaction_raw["type"] == "xinfin_fund_unsigned":
+        if loaded_transaction_raw["type"] not in ["xinfin_fund_unsigned", "xinfin_xrc20_fund_unsigned"]:
             raise TypeError(f"Invalid XinFin fund unsigned transaction raw type, "
                             f"you can't sign '{loaded_transaction_raw['type']}' type by using fund signature.")
 
@@ -314,14 +426,15 @@ class FundSignature(Signature):
             s=signed_fund_transaction["s"],
             v=signed_fund_transaction["v"]
         )
-        self._type = "xinfin_fund_signed"
+        self._type = "xinfin_xrc20_fund_signed" if self._xrc20 else "xinfin_fund_signed"
 
         self._signed_raw = b64encode(str(json.dumps(dict(
             fee=self._fee,
             type=self._type,
             transaction=self._transaction,
             signature=self._signature,
-            network=self._network
+            network=self._network,
+            xrc20=self._xrc20
         ))).encode()).decode()
         return self
 
@@ -332,18 +445,20 @@ class WithdrawSignature(Signature):
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Fund signature XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
     :returns: WithdrawSignature -- XinFin withdraw signature instance.
 
     .. note::
-        XinFin has only two networks, ``mainnet`` and ``testnet``.
+        XinFin has only two networks, ``mainnet``, ``apothem`` and ``testnet``.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"]):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
     def sign(self, transaction_raw: str, solver: WithdrawSolver) -> "WithdrawSignature":
@@ -373,7 +488,7 @@ class WithdrawSignature(Signature):
         decoded_transaction_raw = b64decode(transaction_raw.encode())
         loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
 
-        if not loaded_transaction_raw["type"] == "xinfin_withdraw_unsigned":
+        if loaded_transaction_raw["type"] not in ["xinfin_withdraw_unsigned", "xinfin_xrc20_withdraw_unsigned"]:
             raise TypeError(f"Invalid XinFin withdraw unsigned transaction raw type, "
                             f"you can't sign '{loaded_transaction_raw['type']}' type by using withdraw signature.")
 
@@ -400,14 +515,15 @@ class WithdrawSignature(Signature):
             s=signed_fund_transaction["s"],
             v=signed_fund_transaction["v"]
         )
-        self._type = "xinfin_withdraw_signed"
+        self._type = "xinfin_xrc20_withdraw_signed" if self._xrc20 else "xinfin_withdraw_signed"
 
         self._signed_raw = b64encode(str(json.dumps(dict(
             fee=self._fee,
             type=self._type,
             transaction=self._transaction,
             signature=self._signature,
-            network=self._network
+            network=self._network,
+            xrc20=self._xrc20
         ))).encode()).decode()
         return self
 
@@ -418,18 +534,20 @@ class RefundSignature(Signature):
 
     :param network: XinFin network, defaults to ``mainnet``.
     :type network: str
+    :param xrc20: Fund signature XRC20 token, default to ``False``.
+    :type xrc20: bool
     :param provider: XinFin network provider, defaults to ``http``.
     :type provider: str
 
     :returns: RefundSignature -- XinFin refund signature instance.
 
     .. note::
-        XinFin has only two networks, ``mainnet`` and ``testnet``.
+        XinFin has only two networks, ``mainnet``, ``apothem`` and ``testnet``.
     """
 
-    def __init__(self, network: str = config["network"], provider: str = config["provider"]):
+    def __init__(self, network: str = config["network"], xrc20: bool = False, provider: str = config["provider"]):
         super().__init__(
-            network=network, provider=provider
+            network=network, xrc20=xrc20, provider=provider
         )
 
     def sign(self, transaction_raw: str, solver: RefundSolver) -> "RefundSignature":
@@ -459,7 +577,7 @@ class RefundSignature(Signature):
         decoded_transaction_raw = b64decode(transaction_raw.encode())
         loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
 
-        if not loaded_transaction_raw["type"] == "xinfin_refund_unsigned":
+        if loaded_transaction_raw["type"] not in ["xinfin_refund_unsigned", "xinfin_xrc20_refund_unsigned"]:
             raise TypeError(f"Invalid XinFin refund unsigned transaction raw type, "
                             f"you can't sign '{loaded_transaction_raw['type']}' type by using refund signature.")
 
@@ -486,13 +604,14 @@ class RefundSignature(Signature):
             s=signed_fund_transaction["s"],
             v=signed_fund_transaction["v"]
         )
-        self._type = "xinfin_refund_signed"
+        self._type = "xinfin_xrc20_refund_signed" if self._xrc20 else "xinfin_refund_signed"
 
         self._signed_raw = b64encode(str(json.dumps(dict(
             fee=self._fee,
             type=self._type,
             transaction=self._transaction,
             signature=self._signature,
-            network=self._network
+            network=self._network,
+            xrc20=self._xrc20
         ))).encode()).decode()
         return self

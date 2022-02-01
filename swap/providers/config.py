@@ -7,6 +7,7 @@ bitcoin: dict = {
     "mainnet": {
         "blockchain": "https://blockchain.info",
         "smartbit": "https://api.smartbit.com.au/v1/blockchain",
+        "sochain": "https://chain.so/api/v2/{links}/BTC",
         "blockcypher": {
             "url": "https://api.blockcypher.com/v1/btc/main",
             "token": "c6ef693d3c024088810e6fac2a1494ee"
@@ -15,6 +16,7 @@ bitcoin: dict = {
     "testnet": {
         "blockchain": "https://testnet.blockchain.info",
         "smartbit": "https://testnet-api.smartbit.com.au/v1/blockchain",
+        "sochain": "https://chain.so/api/v2/{links}/BTCTEST",
         "blockcypher": {
             "url": "https://api.blockcypher.com/v1/btc/test3",
             "token": "c6ef693d3c024088810e6fac2a1494ee"
@@ -43,7 +45,7 @@ bitcoin: dict = {
 bytom: dict = {
     "mainnet": {
         "bytom-core": "http://localhost:9888",
-        "blockmeta": "https://blockmeta.com/api/v3",
+        "blockmeta": "https://classic.blockmeta.com/api/v3",
         "blockcenter": "https://ex.movapi.com/bytom/v3"
     },
     "solonet": {
@@ -87,7 +89,10 @@ ethereum: dict = {
             "websocket": "wss://mainnet.infura.io/ws/v3",
             "token": "4414fea5f7454211956b1627621450b4"
         },
-        "contract_address": None
+        "contract_addresses": {
+            "htlc": None,
+            "htlc_erc20": None
+        }
     },
     "ropsten": {
         "infura": {
@@ -95,7 +100,10 @@ ethereum: dict = {
             "websocket": "wss://ropsten.infura.io/ws/v3",
             "token": "4414fea5f7454211956b1627621450b4"
         },
-        "contract_address": "0xE5cb615899436A490dBde26d7880A0C2502Fc676"
+        "contract_addresses": {
+            "htlc": "0x0cc7C744f96729B7f60B12B36A4B9504191CD458",
+            "htlc_erc20": "0x761c47A8dc8178d55aE14b661abf26cc0B599bc6"
+        }
     },
     "kovan": {
         "infura": {
@@ -103,7 +111,10 @@ ethereum: dict = {
             "websocket": "wss://kovan.infura.io/ws/v3",
             "token": "4414fea5f7454211956b1627621450b4"
         },
-        "contract_address": None
+        "contract_addresses": {
+            "htlc": "0xf3c7CD43F2f87958E708E00780EBDf87292Ad37E",
+            "htlc_erc20": "0x32a05649778bc96958bF804835C9e8eC9678e283"
+        }
     },
     "rinkeby": {
         "infura": {
@@ -111,7 +122,10 @@ ethereum: dict = {
             "websocket": "wss://rinkeby.infura.io/ws/v3",
             "token": "4414fea5f7454211956b1627621450b4"
         },
-        "contract_address": None
+        "contract_addresses": {
+            "htlc": "0xB00370e1F88C86Ef6Fc81B380E0c7fC1dcbceD17",
+            "htlc_erc20": "0xe0d3155c9DC0ADdCDA71E7ef15c689AeCC8Dfc28"
+        }
     },
     "testnet": {
         "ganache-cli": {
@@ -119,7 +133,10 @@ ethereum: dict = {
             "websocket": "wss://localhost:8545",
             "token": None
         },
-        "contract_address": None
+        "contract_addresses": {
+            "htlc": None,
+            "htlc_erc20": None
+        }
     },
     "path": "m/44'/60'/0'/0/0",
     "bip44_path": "m/44'/60'/{account}'/{change}/{address}",
@@ -184,12 +201,26 @@ xinfin: dict = {
     "mainnet": {
         "http": "https://rpc.xinfin.network",
         "websocket": "wss://ws.xinfin.network",
-        "contract_address": "xdc656869af3Ec1E8b2982Fc370A0526541C0Ceb90B"
+        "contract_addresses": {
+            "htlc": "xdc1C2F24F4E2427aD43df9c20521B88C78A32Bafb2",
+            "htlc_xrc20": "xdcC8E8De7999D74bdD71e1cDC00025867F34c50b89"
+        }
+    },
+    "apothem": {
+        "http": "https://rpc.apothem.network",
+        "websocket": "wss://ws.apothem.network",
+        "contract_addresses": {
+            "htlc": "xdc959c04329fa6B45d0250A2315673e4F952218BdE",
+            "htlc_xrc20": "xdc4C909fdd6c30f5B4c4d48938C161637B2767d714"
+        }
     },
     "testnet": {
         "http": "http://localhost:8545",
         "websocket": "wss://localhost:8545",
-        "contract_address": None
+        "contract_addresses": {
+            "htlc": None,
+            "htlc_xrc20": None
+        }
     },
     "path": "m/44'/550'/0'/0/0",
     "bip44_path": "m/44'/550'/{account}'/{change}/{address}",

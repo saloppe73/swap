@@ -32,9 +32,9 @@ def fee_calculator(transaction_input: int = 1, transaction_output: int = 1) -> i
     """
     Bitcoin fee calculator.
 
-    :param transaction_input: transaction input numbers, defaults to 1.
+    :param transaction_input: transaction input numbers, defaults to ``1``.
     :type transaction_input: int
-    :param transaction_output: transaction output numbers, defaults to 1.
+    :param transaction_output: transaction output numbers, defaults to ``1``.
     :type transaction_output: int
 
     :returns: int -- Bitcoin fee (Satoshi amount).
@@ -97,9 +97,9 @@ def is_address(address: str, network: Optional[str] = None, address_type: Option
 
     :param address: Bitcoin address.
     :type address: str
-    :param network: Bitcoin network, defaults to None.
+    :param network: Bitcoin network, defaults to ``None``.
     :type network: str
-    :param address_type: Bitcoin address type, defaults to None.
+    :param address_type: Bitcoin address type, defaults to ``None``.
     :type address_type: str
 
     :returns: bool -- Bitcoin valid/invalid address.
@@ -163,6 +163,7 @@ def is_transaction_raw(transaction_raw: str) -> bool:
         decoded_transaction_raw = b64decode(transaction_raw.encode())
         loads_transaction_raw = json.loads(decoded_transaction_raw.decode())
         return loads_transaction_raw["type"] in [
+            "bitcoin_normal_unsigned", "bitcoin_normal_signed",
             "bitcoin_fund_unsigned", "bitcoin_fund_signed",
             "bitcoin_withdraw_unsigned", "bitcoin_withdraw_signed",
             "bitcoin_refund_unsigned", "bitcoin_refund_signed"
@@ -220,11 +221,11 @@ def decode_transaction_raw(transaction_raw: str, offline: bool = True,
 
     :param transaction_raw: Bitcoin transaction raw.
     :type transaction_raw: str
-    :param offline: Offline decode, defaults to True.
+    :param offline: Offline decode, defaults to ``True``.
     :type offline: bool
-    :param headers: Request headers, default to common headers.
+    :param headers: Request headers, default to ``common-headers``.
     :type headers: dict
-    :param timeout: Request timeout, default to 60.
+    :param timeout: Request timeout, default to ``60``.
     :type timeout: int
 
     :returns: dict -- Decoded Bitcoin transaction raw.
@@ -265,16 +266,18 @@ def decode_transaction_raw(transaction_raw: str, offline: bool = True,
     )
 
 
-def submit_transaction_raw(transaction_raw: str, headers: dict = config["headers"],
+def submit_transaction_raw(transaction_raw: str, endpoint: str = "sochain", headers: dict = config["headers"],
                            timeout: int = config["timeout"]) -> dict:
     """
     Submit transaction raw to Bitcoin blockchain.
 
     :param transaction_raw: Bitcoin transaction raw.
     :type transaction_raw: str
-    :param headers: Request headers, default to common headers.
+    :param endpoint: Bitcoin transaction submiter endpoint api name, defaults to ``sochain``.
+    :type endpoint: str
+    :param headers: Request headers, default to ``common-headers``.
     :type headers: dict
-    :param timeout: Request timeout, default to 60.
+    :param timeout: Request timeout, default to ``60``.
     :type timeout: int
 
     :returns: dict -- Bitcoin submitted transaction id, fee, type and date.
@@ -292,24 +295,46 @@ def submit_transaction_raw(transaction_raw: str, headers: dict = config["headers
     decoded_transaction_raw = b64decode(transaction_raw.encode())
     loaded_transaction_raw = json.loads(decoded_transaction_raw.decode())
 
-    url = f"{config[loaded_transaction_raw['network']]['smartbit']}/pushtx"
-    data = dict(hex=loaded_transaction_raw["raw"])
-    response = requests.post(
-        url=url, data=json.dumps(data), headers=headers, timeout=timeout
-    )
-    response_json = response.json()
-    if "success" in response_json and not response_json["success"]:
-        raise APIError(response_json["error"]["message"], response_json["error"]["code"])
-    elif "success" in response_json and response_json["success"]:
-        return dict(
-            fee=loaded_transaction_raw["fee"],
-            type=loaded_transaction_raw["type"],
-            transaction_id=response_json["txid"],
-            network=loaded_transaction_raw["network"],
-            date=str(datetime.datetime.now())
+    if endpoint == "smartbit":
+        url = f"{config[loaded_transaction_raw['network']]['smartbit']}/pushtx"
+        data = dict(hex=loaded_transaction_raw["raw"])
+        response = requests.post(
+            url=url, data=json.dumps(data), headers=headers, timeout=timeout
         )
+        response_json = response.json()
+        if "success" in response_json and not response_json["success"]:
+            raise APIError(response_json["error"]["message"], response_json["error"]["code"])
+        elif "success" in response_json and response_json["success"]:
+            return dict(
+                fee=loaded_transaction_raw["fee"],
+                type=loaded_transaction_raw["type"],
+                transaction_hash=response_json["txid"],
+                network=loaded_transaction_raw["network"],
+                date=str(datetime.datetime.now())
+            )
+        else:
+            raise APIError("Unknown Bitcoin submit payment error.")
+    elif endpoint == "sochain":
+        url = str(config[loaded_transaction_raw['network']]['sochain']).format(links="send_tx")
+        data = dict(tx_hex=loaded_transaction_raw["raw"])
+        response = requests.post(
+            url=url, data=json.dumps(data), headers=headers, timeout=timeout
+        )
+        response_json = response.json()
+        if "status" in response_json and response_json["status"] == "success":
+            return dict(
+                fee=loaded_transaction_raw["fee"],
+                type=loaded_transaction_raw["type"],
+                transaction_hash=response_json["data"]["txid"],
+                network=loaded_transaction_raw["network"],
+                date=str(datetime.datetime.now())
+            )
+        elif "status" in response_json and response_json["status"] == "fail":
+            raise APIError(response_json["data"]["tx_hex"])
+        else:
+            raise APIError("Unknown Bitcoin submit payment error.")
     else:
-        raise APIError("Unknown Bitcoin submit payment error.")
+        raise TypeError("Invalid Bitcoin endpoint api name, please choose only smartbit or sochain only.")
 
 
 def get_address_hash(address: str, script: bool = False) -> Union[str, P2pkhScript, P2shScript]:
@@ -318,7 +343,7 @@ def get_address_hash(address: str, script: bool = False) -> Union[str, P2pkhScri
 
     :param address: Bitcoin address.
     :type address: str
-    :param script: Return script (P2pkhScript, P2shScript), default to False.
+    :param script: Return script (P2pkhScript, P2shScript), default to ``False``.
     :type script: bool
 
     :returns: str -- Bitcoin address hash.

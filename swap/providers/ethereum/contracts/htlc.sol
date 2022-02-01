@@ -1,6 +1,6 @@
-// Ethereum Smart Contract -> Solidity language
+// SPDX-License-Identifier: AGPL-3.0
 
-pragma solidity ^0.8.6;
+pragma solidity ^0.8.10;
 
 /**
  * @title Hash Time Lock Contract (HTLC)

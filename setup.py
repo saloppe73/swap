@@ -23,10 +23,10 @@ setup(
     license=swap.__license__,
     author=swap.__author__,
     author_email=swap.__email__,
-    url="https://github.com/meherett/swap",
+    url="https://github.com/movnetwork/swap",
     packages=find_packages(),
     keywords=[
-        "cross-chain", "atomic", "swap", "htlc", "bitcoin", "bytom", "ethereum", "vapor", "xinfin", "cryptocurrencies"
+        "cross-chain", "atomic-swap", "swap", "htlc", "bitcoin", "bytom", "ethereum", "vapor", "xinfin", "cryptocurrencies"
     ],
     entry_points={
         "console_scripts": ["swap=swap.cli.__main__:main"]
@@ -35,13 +35,13 @@ setup(
     install_requires=requirements,
     extras_require={
         "tests": [
-            "pytest>=6.2.4,<7",
-            "pytest-cov>=2.12.1,<3"
+            "pytest>=6.2.5,<7",
+            "pytest-cov>=3.0.0,<4"
         ],
         "docs": [
-            "sphinx>=4.0.2,<5",
-            "sphinx-rtd-theme>=0.5.2,<1",
-            "sphinx-click>=3.0.1,<4"
+            "sphinx>=4.3.1,<5",
+            "sphinx-rtd-theme>=1.0.0,<2",
+            "sphinx-click>=3.0.2,<4"
         ]
     },
     classifiers=[
